@@ -18,7 +18,8 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.*;
 
 class SimpleSample {
 
@@ -26,7 +27,8 @@ class SimpleSample {
   static final int IMAGE_DIVISOR = 20;
   static final int BIN_SIZE = 50;
   static final int HISTOGRAM_DIVISOR = 3;
-
+  static final ImageComparitor comparitor = new ChiSquareComparitor();
+  static final BiFunction<Mat, Mat, Double> COMPARE = comparitor::compare;
 
   public static Mat generateHistogram(Mat img) {
     // images are all square
@@ -76,7 +78,7 @@ class SimpleSample {
     	sourceTilesHistos.add(histos);
     }
 
-    System.out.print("Loading histograms ");
+    System.out.print("Loading histograms.");
     Map<Mat, List<Mat>> imgHistoGroups = new HashMap<>();
     Files.walk(Paths.get("images/")).forEach(filePath -> {
       if (Files.isRegularFile(filePath)) {
@@ -87,6 +89,8 @@ class SimpleSample {
       }
     });
 
+    System.out.print("Loaded histograms.");
+    AtomicInteger progress = new AtomicInteger (0);
     List<Mat> outputImages = sourceTilesHistos
       .parallelStream()
       .map(sourceTileHistos -> {
@@ -99,13 +103,16 @@ class SimpleSample {
         Double sim = 0d;
 
         for(int i=0 ; i < histoGroup.size() ; i++) {
-          sim += Imgproc.compareHist(sourceTileHistos.get(i), histoGroup.get(i), Imgproc.CV_COMP_CHISQR);
+          sim += COMPARE.apply(img, histoGroup.get(i));
         }
 
         if(similarity == null || sim < similarity) {
           similarity = sim;
           similiarImg = img;
         }
+
+        int p = progress.incrementAndGet();
+        System.out.println("similiar image found for " + p + "/" + IMAGE_DIVISOR);
       }
       
       return similiarImg;
@@ -125,3 +132,12 @@ class SimpleSample {
     Highgui.imwrite("out.png", outputImage);
   }
 }
+
+interface ImageComparitor {
+  public Double compare(Mat img1, Mat img2);
+}
+
+class ChiSquareComparitor implements ImageComparitor {
+  public Double compare(Mat img1, Mat img2) {
+    return Imgproc.compareHist(img1, img2, Imgproc.CV_COMP_CHISQR); 
+  }}
