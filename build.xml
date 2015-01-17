@@ -1,4 +1,4 @@
-<project name="SimpleSample" basedir="." default="rebuild-run">
+<project name="Mosiac" basedir="." default="rebuild-run">
 
        <property name="src.dir"     value="src"/>
 

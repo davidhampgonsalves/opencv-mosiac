@@ -25,10 +25,13 @@ class Mosiac {
 
   static { System.loadLibrary(Core.NATIVE_LIBRARY_NAME); }
 
-  static final int IMAGE_DIVISOR = 20;
-  static final int BIN_SIZE = 50;
-  static final int HISTOGRAM_DIVISOR = 3;
-  static final ImageComparitor comparitor = new ChiSquareComparitor();
+  static final int IMAGE_DIVISOR = 30;
+  static final int BIN_SIZE = 20;
+  static final int HISTOGRAM_DIVISOR = 10;
+  //static final ImageComparitor comparitor = new ChiSquareComparitor();
+  static final ImageComparitor comparitor = new CorelationComparitor();
+  //static final ImageComparitor comparitor = new IntersectComparitor();
+  //static final ImageComparitor comparitor = new HellingerComparitor();
   static final BiFunction<Mat, Mat, Double> COMPARE = comparitor::compare;
 
   public static Mat generateHistogram(Mat img) {
@@ -61,7 +64,7 @@ class Mosiac {
     return imgs;
   }
 
-  private static Mat openImage(String path) {
+  public static Mat openImage(String path) {
     Mat img = Highgui.imread(path, Highgui.CV_LOAD_IMAGE_COLOR);
     if(img.empty())
       return null;
@@ -79,7 +82,7 @@ class Mosiac {
     	sourceTilesHistos.add(histos);
     }
 
-    System.out.print("Loading histograms.");
+    System.out.println("Loading histograms.");
     Map<Mat, List<Mat>> imgHistoGroups = new HashMap<>();
     Files.walk(Paths.get("images/")).forEach(filePath -> {
       if (Files.isRegularFile(filePath)) {
@@ -89,8 +92,9 @@ class Mosiac {
         imgHistoGroups.put(img, generateHistograms(img));
       }
     });
+    System.out.println("Loaded histograms.");
 
-    System.out.print("Loaded histograms.");
+    System.out.println("Finding similiar images.");
     AtomicInteger progress = new AtomicInteger (0);
     List<Mat> outputImages = sourceTilesHistos
       .parallelStream()
@@ -104,29 +108,28 @@ class Mosiac {
         Double sim = 0d;
 
         for(int i=0 ; i < histoGroup.size() ; i++) {
-          sim += COMPARE.apply(img, histoGroup.get(i));
+          sim += COMPARE.apply(sourceTileHistos.get(i), histoGroup.get(i));
         }
 
         if(similarity == null || sim < similarity) {
           similarity = sim;
           similiarImg = img;
         }
-
-        int p = progress.incrementAndGet();
-        System.out.println("similiar image found for " + p + "/" + IMAGE_DIVISOR);
       }
+      int p = progress.incrementAndGet();
+      System.out.println("similiar image found for " + p + "/" + IMAGE_DIVISOR * IMAGE_DIVISOR);
       
       return similiarImg;
     }).collect(Collectors.toList());
 
-    List<Mat> outputImageRows = IntStream.range(1, IMAGE_DIVISOR) 
+    List<Mat> outputImageRows = IntStream.range(1, IMAGE_DIVISOR)
       .mapToObj(i -> {
         Mat img = new Mat();
         List<Mat> row = outputImages.subList((i-1) * IMAGE_DIVISOR, i * IMAGE_DIVISOR);
         Core.vconcat(row, img);
         return img;
       }).collect(Collectors.toList());
-    
+
     Mat outputImage = new Mat();
     Core.hconcat(outputImageRows, outputImage);
 
@@ -136,28 +139,28 @@ class Mosiac {
 
 interface ImageComparitor {
   default public Double compare(Mat img1, Mat img2) {
-    Double score = Imgproc.compareHist(img1, img2, getType()); 
+    Double score = Imgproc.compareHist(img1, img2, getType());
     return normalize(score);
   }
-  default private Double normalize(Double score) {return score;}
-  
-  private int getType();
+  default public Double normalize(Double score) {return score;}
+
+  public int getType();
 }
 
 class ChiSquareComparitor implements ImageComparitor {
-  private int getType() {return Imgproc.CV_COMP_CHISQR;}
+  public int getType() {return Imgproc.CV_COMP_CHISQR;}
 }
 
-class Corelation implements ImageComparitor {
-  private int getType() {return Imgproc.CV_COMP_CORREL:}
-  private Double normalize(Double score) {return (-1 * score) + 1;}
+class CorelationComparitor implements ImageComparitor {
+  public int getType() {return Imgproc.CV_COMP_CORREL;}
+  public Double normalize(Double score) {return (-1 * score) + 1;}
 }
 
 class IntersectComparitor implements ImageComparitor {
-  private int getType() {return Imgproc.CV_COMP_INTERSECT;}
-  private Double normalize(Double score) {return Math.abs(score-1);}
+  public int getType() {return Imgproc.CV_COMP_INTERSECT;}
+  public Double normalize(Double score) {return Math.abs(score-1);}
 }
 
 class HellingerComparitor implements ImageComparitor {
-  private int getType() {return ImgProc.CV_COMP_HELLINGER;}
+  public int getType() {return Imgproc.CV_COMP_HELLINGER;}
 }
